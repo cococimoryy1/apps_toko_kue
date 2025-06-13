@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:pocketbase/pocketbase.dart';
 import 'register_page.dart';
-import 'home_page.dart';
-import 'pocketbase_services.dart'; // Tambahkan ini
+import '../user/home_page.dart';
+import '../../pocketbase_services.dart';
+import '../admin/admin_dashboard.dart';
 
 class LoginPage extends StatefulWidget {
   @override
@@ -17,9 +18,7 @@ class _LoginPageState extends State<LoginPage> {
   bool _isLoading = false;
   bool _rememberMe = false;
 
-  final PocketBase _pb = PocketBaseService().pb; // Gunakan instance dari singleton
-
-  // ... (kode lainnya tetap sama)
+  final PocketBase _pb = PocketBaseService().pb;
 
   Future<void> _login() async {
     if (_formKey.currentState!.validate()) {
@@ -32,10 +31,18 @@ class _LoginPageState extends State<LoginPage> {
           _emailController.text,
           _passwordController.text,
         );
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(builder: (context) => HomePage()),
-        );
+        final userRole = _pb.authStore.model?.data['role'] as String? ?? 'customer';
+        if (userRole == 'admin') {
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(builder: (context) => AdminDashboard()),
+          );
+        } else {
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(builder: (context) => HomePage()),
+          );
+        }
       } catch (e) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -51,9 +58,6 @@ class _LoginPageState extends State<LoginPage> {
     }
   }
 
-  // ... (build method dan lainnya tetap sama)
-
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -66,7 +70,6 @@ class _LoginPageState extends State<LoginPage> {
             children: [
               SizedBox(height: 40),
               
-              // Logo and Welcome Text
               Center(
                 child: Column(
                   children: [
@@ -112,13 +115,11 @@ class _LoginPageState extends State<LoginPage> {
               
               SizedBox(height: 40),
               
-              // Login Form
               Form(
                 key: _formKey,
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // Email Field
                     Text(
                       'Email',
                       style: TextStyle(
@@ -158,7 +159,6 @@ class _LoginPageState extends State<LoginPage> {
                     
                     SizedBox(height: 20),
                     
-                    // Password Field
                     Text(
                       'Password',
                       style: TextStyle(
@@ -172,7 +172,7 @@ class _LoginPageState extends State<LoginPage> {
                       controller: _passwordController,
                       obscureText: !_isPasswordVisible,
                       decoration: InputDecoration(
-                        hintText: 'Masukkan password Anda',
+                        hintText: 'Masukkan password',
                         prefixIcon: Icon(Icons.lock_outline, color: Color(0xFFEC4899)),
                         suffixIcon: IconButton(
                           icon: Icon(
@@ -200,16 +200,12 @@ class _LoginPageState extends State<LoginPage> {
                         if (value == null || value.isEmpty) {
                           return 'Password tidak boleh kosong';
                         }
-                        if (value.length < 6) {
-                          return 'Password minimal 6 karakter';
-                        }
-                        return null;
+                        return null; // Hilangkan validasi kompleksitas
                       },
                     ),
                     
                     SizedBox(height: 16),
                     
-                    // Remember Me & Forgot Password
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
@@ -258,7 +254,6 @@ class _LoginPageState extends State<LoginPage> {
                     
                     SizedBox(height: 32),
                     
-                    // Login Button
                     SizedBox(
                       width: double.infinity,
                       height: 50,
@@ -300,7 +295,6 @@ class _LoginPageState extends State<LoginPage> {
                     
                     SizedBox(height: 24),
                     
-                    // Demo Account Info
                     Container(
                       width: double.infinity,
                       padding: EdgeInsets.all(16),
@@ -329,7 +323,7 @@ class _LoginPageState extends State<LoginPage> {
                             ),
                           ),
                           Text(
-                            'Password: admin123',
+                            'Password: 12345678',
                             style: TextStyle(
                               fontSize: 14,
                               color: Colors.grey[700],
@@ -342,7 +336,6 @@ class _LoginPageState extends State<LoginPage> {
                     
                     SizedBox(height: 32),
                     
-                    // Divider
                     Row(
                       children: [
                         Expanded(child: Divider(color: Colors.grey[300])),
@@ -359,7 +352,6 @@ class _LoginPageState extends State<LoginPage> {
                     
                     SizedBox(height: 24),
                     
-                    // Social Login Buttons
                     Row(
                       children: [
                         Expanded(
@@ -413,7 +405,6 @@ class _LoginPageState extends State<LoginPage> {
               
               SizedBox(height: 32),
               
-              // Register Link
               Center(
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.center,

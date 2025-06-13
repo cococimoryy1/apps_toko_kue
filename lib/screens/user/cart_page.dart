@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'cart_provider.dart';
 import 'payment_page.dart'; // Impor halaman pembayaran
-import 'admin_dashboard.dart';
+import '../admin/admin_dashboard.dart';
 
 class CartPage extends StatefulWidget {
   @override

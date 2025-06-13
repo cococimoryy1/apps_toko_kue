@@ -2,7 +2,7 @@ import 'package:pocketbase/pocketbase.dart';
 
 class PocketBaseService {
   static final PocketBaseService _instance = PocketBaseService._internal();
-  static PocketBase _pb = PocketBase('http://127.0.0.1:8091'); // Ganti dengan URL server Anda
+  static PocketBase _pb = PocketBase('http://127.0.0.1:8091/'); // Ganti dengan URL server Anda
 
   factory PocketBaseService() {
     return _instance;

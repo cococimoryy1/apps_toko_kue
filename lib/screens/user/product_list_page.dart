@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:pocketbase/pocketbase.dart';
 import 'product_detail_page.dart';
-import 'login_page.dart';
-import 'pocketbase_services.dart';
+import '../auth/login_page.dart';
+import '../../pocketbase_services.dart';
 
 class ProductListPage extends StatefulWidget {
   final String? categoryId; // Parameter opsional untuk filter kategori

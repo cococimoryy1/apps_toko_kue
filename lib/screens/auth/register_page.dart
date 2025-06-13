@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:pocketbase/pocketbase.dart';
 import 'login_page.dart';
-import 'home_page.dart';
+import '../user/home_page.dart';
+import '../../pocketbase_services.dart';
 
 class RegisterPage extends StatefulWidget {
   @override
@@ -21,7 +22,7 @@ class _RegisterPageState extends State<RegisterPage> {
   bool _isLoading = false;
   bool _agreeToTerms = false;
 
-  final PocketBase _pb = PocketBase('http://127.0.0.1:8091'); // Ganti dengan URL server Anda
+  final PocketBase _pb = PocketBaseService().pb;
 
   @override
   void dispose() {
@@ -33,75 +34,82 @@ class _RegisterPageState extends State<RegisterPage> {
     super.dispose();
   }
 
-  Future<void> _register() async {
-    if (_formKey.currentState!.validate()) {
-      if (!_agreeToTerms) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Anda harus menyetujui syarat dan ketentuan'),
-            backgroundColor: Colors.red,
-          ),
-        );
-        return;
+Future<void> _register() async {
+  if (_formKey.currentState!.validate()) {
+    if (!_agreeToTerms) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Anda harus menyetujui syarat dan ketentuan'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    setState(() {
+      _isLoading = true;
+    });
+
+    try {
+      final body = {
+        'name': _nameController.text,
+        'email': _emailController.text,
+        'phone': _phoneController.text,
+        'password': _passwordController.text,
+        'passwordConfirm': _confirmPasswordController.text,
+        'emailVisibility': false,
+        'verified': false,
+        'role': 'customer', // Pastikan sesuai opsi di schema
+      };
+      print('Request body sent: $body'); // Log body yang dikirim
+      final response = await _pb.collection('users').create(body: body);
+      print('Server response: ${response.toJson()}'); // Log respons dari server
+      if (!response.toJson().containsKey('role') || response.toJson()['role'] == null) {
+        print('Warning: Role field not set in response');
       }
-
-      setState(() {
-        _isLoading = true;
-      });
-
-      try {
-        await _pb.collection('users').create(body: {
-          'name': _nameController.text,
-          'email': _emailController.text,
-          'phone': _phoneController.text,
-          'password': _passwordController.text,
-          'passwordConfirm': _confirmPasswordController.text,
-          'emailVisibility': false,
-          'verified': false,
-          'role': 'customer',
-        });
-        showDialog(
-          context: context,
-          barrierDismissible: false,
-          builder: (BuildContext context) {
-            return AlertDialog(
-              title: Row(
-                children: [
-                  Icon(Icons.check_circle, color: Colors.green, size: 28),
-                  SizedBox(width: 8),
-                  Text('Berhasil!'),
-                ],
-              ),
-              content: Text('Akun Anda berhasil dibuat. Selamat datang di Toko Roti Bahagia!'),
-              actions: [
-                TextButton(
-                  onPressed: () {
-                    Navigator.pop(context); // Close dialog
-                    Navigator.pushReplacement(
-                      context,
-                      MaterialPageRoute(builder: (context) => HomePage()),
-                    );
-                  },
-                  child: Text('Mulai Belanja'),
-                ),
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (BuildContext context) {
+          return AlertDialog(
+            title: Row(
+              children: [
+                Icon(Icons.check_circle, color: Colors.green, size: 28),
+                SizedBox(width: 8),
+                Text('Berhasil!'),
               ],
-            );
-          },
-        );
-      } catch (e) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Registrasi gagal: $e'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      } finally {
-        setState(() {
-          _isLoading = false;
-        });
-      }
+            ),
+            content: Text('Akun Anda berhasil dibuat. Selamat datang di Toko Roti Bahagia!'),
+            actions: [
+              TextButton(
+                onPressed: () {
+                  Navigator.pop(context);
+                  Navigator.pushReplacement(
+                    context,
+                    MaterialPageRoute(builder: (context) => HomePage()),
+                  );
+                },
+                child: Text('Mulai Belanja'),
+              ),
+            ],
+          );
+        },
+      );
+    } catch (e) {
+      print('Registration error details: $e'); // Log error detail
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Registrasi gagal: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    } finally {
+      setState(() {
+        _isLoading = false;
+      });
     }
   }
+}
 
   @override
   Widget build(BuildContext context) {
@@ -121,7 +129,6 @@ class _RegisterPageState extends State<RegisterPage> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Header
               Center(
                 child: Column(
                   children: [
@@ -167,13 +174,11 @@ class _RegisterPageState extends State<RegisterPage> {
               
               SizedBox(height: 32),
               
-              // Registration Form
               Form(
                 key: _formKey,
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // Name Field
                     Text(
                       'Nama Lengkap',
                       style: TextStyle(
@@ -213,7 +218,6 @@ class _RegisterPageState extends State<RegisterPage> {
                     
                     SizedBox(height: 16),
                     
-                    // Email Field
                     Text(
                       'Email',
                       style: TextStyle(
@@ -253,7 +257,6 @@ class _RegisterPageState extends State<RegisterPage> {
                     
                     SizedBox(height: 16),
                     
-                    // Phone Field
                     Text(
                       'Nomor Telepon',
                       style: TextStyle(
@@ -267,7 +270,7 @@ class _RegisterPageState extends State<RegisterPage> {
                       controller: _phoneController,
                       keyboardType: TextInputType.phone,
                       decoration: InputDecoration(
-                        hintText: 'Masukkan nomor telepon Anda',
+                        hintText: 'Masukkan nomor telepon (10-12 digit)',
                         prefixIcon: Icon(Icons.phone_outlined, color: Color(0xFFEC4899)),
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(12),
@@ -284,8 +287,8 @@ class _RegisterPageState extends State<RegisterPage> {
                         if (value == null || value.isEmpty) {
                           return 'Nomor telepon tidak boleh kosong';
                         }
-                        if (value.length < 10) {
-                          return 'Nomor telepon minimal 10 digit';
+                        if (!RegExp(r'^\d{10,12}$').hasMatch(value)) {
+                          return 'Nomor telepon harus 10-12 digit angka';
                         }
                         return null;
                       },
@@ -293,7 +296,6 @@ class _RegisterPageState extends State<RegisterPage> {
                     
                     SizedBox(height: 16),
                     
-                    // Password Field
                     Text(
                       'Password',
                       style: TextStyle(
@@ -307,7 +309,7 @@ class _RegisterPageState extends State<RegisterPage> {
                       controller: _passwordController,
                       obscureText: !_isPasswordVisible,
                       decoration: InputDecoration(
-                        hintText: 'Buat password yang kuat',
+                        hintText: 'Buat password (min 8 karakter)',
                         prefixIcon: Icon(Icons.lock_outline, color: Color(0xFFEC4899)),
                         suffixIcon: IconButton(
                           icon: Icon(
@@ -347,7 +349,6 @@ class _RegisterPageState extends State<RegisterPage> {
                     
                     SizedBox(height: 16),
                     
-                    // Confirm Password Field
                     Text(
                       'Konfirmasi Password',
                       style: TextStyle(
@@ -361,7 +362,7 @@ class _RegisterPageState extends State<RegisterPage> {
                       controller: _confirmPasswordController,
                       obscureText: !_isConfirmPasswordVisible,
                       decoration: InputDecoration(
-                        hintText: 'Ulangi password Anda',
+                        hintText: 'Ulangi password',
                         prefixIcon: Icon(Icons.lock_outline, color: Color(0xFFEC4899)),
                         suffixIcon: IconButton(
                           icon: Icon(
@@ -398,7 +399,6 @@ class _RegisterPageState extends State<RegisterPage> {
                     
                     SizedBox(height: 20),
                     
-                    // Password Requirements
                     Container(
                       padding: EdgeInsets.all(12),
                       decoration: BoxDecoration(
@@ -431,7 +431,6 @@ class _RegisterPageState extends State<RegisterPage> {
                     
                     SizedBox(height: 20),
                     
-                    // Terms and Conditions
                     Row(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
@@ -486,7 +485,6 @@ class _RegisterPageState extends State<RegisterPage> {
                     
                     SizedBox(height: 32),
                     
-                    // Register Button
                     SizedBox(
                       width: double.infinity,
                       height: 50,
@@ -528,7 +526,6 @@ class _RegisterPageState extends State<RegisterPage> {
                     
                     SizedBox(height: 24),
                     
-                    // Divider
                     Row(
                       children: [
                         Expanded(child: Divider(color: Colors.grey[300])),
@@ -545,7 +542,6 @@ class _RegisterPageState extends State<RegisterPage> {
                     
                     SizedBox(height: 20),
                     
-                    // Social Register Buttons
                     Row(
                       children: [
                         Expanded(
@@ -599,7 +595,6 @@ class _RegisterPageState extends State<RegisterPage> {
               
               SizedBox(height: 32),
               
-              // Login Link
               Center(
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.center,

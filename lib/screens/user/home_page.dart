@@ -2,9 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:pocketbase/pocketbase.dart';
 import 'product_list_page.dart';
 import 'cart_page.dart';
-import 'admin_dashboard.dart';
-import 'login_page.dart';
-import 'pocketbase_services.dart';
+import '../profil/profil_page.dart';
+import '../auth/login_page.dart';
+import '../../pocketbase_services.dart';
 
 class HomePage extends StatefulWidget {
   @override
@@ -48,23 +48,24 @@ class _HomePageState extends State<HomePage> {
     });
   }
 
-Future<void> _logout() async {
-  try {
-    _pb.authStore.clear(); // Remove 'await' since clear() is synchronous
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Berhasil logout')),
-    );
-    Navigator.pushReplacement(
-      context,
-      MaterialPageRoute(builder: (context) => LoginPage()),
-    );
-  } catch (e) {
-    print('Error during logout: $e');
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Gagal logout: $e')),
-    );
+  Future<void> _logout() async {
+    try {
+      _pb.authStore.clear(); // clear() adalah metode sinkron
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Berhasil logout')),
+      );
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (context) => LoginPage()),
+      );
+    } catch (e) {
+      print('Error during logout: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Gagal logout: $e')),
+      );
+    }
   }
-}
+
   Future<List<Map<String, dynamic>>> _fetchCategories() async {
     try {
       final records = await _pb.collection('categories').getFullList();
@@ -156,10 +157,28 @@ Future<void> _logout() async {
           IconButton(
             icon: Icon(Icons.person_outline, color: Color(0xFFEC4899)),
             onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (context) => AdminDashboard()),
-              );
+              final user = _pb.authStore.model;
+              if (user != null) {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => ProfilePage(
+                      name: user.data['name'] ?? 'Unknown',
+                      email: user.data['email'] ?? 'No email',
+                      phone: user.data['phone'] ?? 'No phone',
+                      role: user.data['role'] ?? 'No role',
+                    ),
+                  ),
+                );
+              } else {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text('Silakan login terlebih dahulu')),
+                );
+                Navigator.pushReplacement(
+                  context,
+                  MaterialPageRoute(builder: (context) => LoginPage()),
+                );
+              }
             },
           ),
           Stack(
@@ -195,28 +214,7 @@ Future<void> _logout() async {
           ),
           IconButton(
             icon: Icon(Icons.logout, color: Color(0xFFEC4899)),
-            onPressed: () {
-              showDialog(
-                context: context,
-                builder: (context) => AlertDialog(
-                  title: Text('Konfirmasi Logout'),
-                  content: Text('Apakah Anda yakin ingin logout?'),
-                  actions: [
-                    TextButton(
-                      onPressed: () => Navigator.pop(context),
-                      child: Text('Batal'),
-                    ),
-                    TextButton(
-                      onPressed: () {
-                        Navigator.pop(context);
-                        _logout();
-                      },
-                      child: Text('Logout'),
-                    ),
-                  ],
-                ),
-              );
-            },
+            onPressed: _logout,
           ),
         ],
       ),

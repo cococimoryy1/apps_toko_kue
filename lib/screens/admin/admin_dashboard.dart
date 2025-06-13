@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'adminprovider.dart';
+import 'add_product_page.dart';
+import '../../pocketbase_services.dart'; // Pastikan file ini ada untuk logout
 
 class AdminDashboard extends StatefulWidget {
   @override
@@ -80,6 +82,17 @@ class _AdminDashboardState extends State<AdminDashboard> {
     return Provider.of<AdminProvider>(context).orders.fold(0.0, (sum, order) => sum + (order['total'] as num));
   }
 
+  Future<void> _logout() async {
+    try {
+      PocketBaseService().pb.authStore.clear(); // Panggil clear tanpa await karena return void
+      Navigator.pushNamedAndRemoveUntil(context, '/login', (route) => false); // Navigasi setelah clear
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Gagal logout: $e')),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final adminProvider = Provider.of<AdminProvider>(context);
@@ -120,10 +133,6 @@ class _AdminDashboardState extends State<AdminDashboard> {
     return Scaffold(
       appBar: AppBar(
         title: Text('Dashboard Admin'),
-        leading: IconButton(
-          icon: Icon(Icons.arrow_back),
-          onPressed: () => Navigator.pop(context),
-        ),
         actions: [
           IconButton(
             icon: Icon(Icons.refresh),
@@ -137,6 +146,16 @@ class _AdminDashboardState extends State<AdminDashboard> {
                 ),
               );
             },
+          ),
+          IconButton(
+            icon: Icon(Icons.add),
+            onPressed: () {
+              Navigator.push(context, MaterialPageRoute(builder: (context) => AddProductPage()));
+            },
+          ),
+          IconButton(
+            icon: Icon(Icons.logout),
+            onPressed: _logout, // Tombol logout terpisah
           ),
         ],
       ),
@@ -229,7 +248,6 @@ class _AdminDashboardState extends State<AdminDashboard> {
               itemCount: orders.length,
               itemBuilder: (context, index) {
                 final order = orders[index];
-                // Pengecekan null untuk created
                 final created = order['created'] ?? DateTime.now();
                 return Card(
                   margin: EdgeInsets.only(bottom: 12),
@@ -421,7 +439,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
                             width: double.infinity,
                             child: ElevatedButton(
                               onPressed: () => updateOrderStatus(index, 'completed'),
-                              child: Text('Selesaikan'),
+                              child: Text('Selesai'),
                               style: ElevatedButton.styleFrom(
                                 backgroundColor: Colors.green,
                                 foregroundColor: Colors.white,

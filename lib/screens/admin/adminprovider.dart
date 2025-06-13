@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:pocketbase/pocketbase.dart';
-import 'pocketbase_services.dart';
+import '../../pocketbase_services.dart';
 
 class AdminProvider with ChangeNotifier {
   List<Map<String, dynamic>> _orders = [];

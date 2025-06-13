@@ -1,13 +1,18 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'screens/cart_provider.dart';
-import 'screens/login_page.dart';
-import 'screens/home_page.dart';
-import 'screens/product_list_page.dart';
-import 'screens/product_detail_page.dart';
-import 'screens/cart_page.dart';
-import 'screens/admin_dashboard.dart';
-import 'screens/adminprovider.dart';
+import 'package:pocketbase/pocketbase.dart';
+import 'screens/user/cart_provider.dart';
+import 'screens/auth/login_page.dart';
+import 'screens/user/home_page.dart';
+import 'screens/user/product_list_page.dart';
+import 'screens/user/product_detail_page.dart';
+import 'screens/user/cart_page.dart';
+import 'screens/admin/admin_dashboard.dart';
+import 'screens/admin/adminprovider.dart';
+import 'screens/admin/add_product_page.dart';
+import 'screens/user/product_provider.dart';
+import 'screens/profil/profil_page.dart';
+import 'screens/profil/edit_page.dart';
 
 void main() {
   runApp(
@@ -15,6 +20,7 @@ void main() {
       providers: [
         ChangeNotifierProvider(create: (_) => CartProvider()),
         ChangeNotifierProvider(create: (_) => AdminProvider()),
+        ChangeNotifierProvider(create: (_) => ProductProvider()),
       ],
       child: BakeryApp(),
     ),
@@ -22,6 +28,8 @@ void main() {
 }
 
 class BakeryApp extends StatelessWidget {
+  final PocketBase pb = PocketBase('http://127.0.0.1:8090'); // Ganti dengan URL PocketBase Anda
+
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
@@ -45,12 +53,42 @@ class BakeryApp extends StatelessWidget {
       ),
       home: LoginPage(),
       routes: {
+        '/login': (context) => LoginPage(),
         '/home': (context) => HomePage(),
         '/products': (context) => ProductListPage(),
         '/productDetail': (context) => ProductDetailPage(productId: ModalRoute.of(context)!.settings.arguments as String),
         '/cart': (context) => CartPage(),
         '/admin': (context) => AdminDashboard(),
+        '/addProduct': (context) => AddProductPage(),
+        '/profile': (context) => _buildProfilePage(context),
+        '/edit_profile': (context) => _buildEditProfilePage(context),
       },
+    );
+  }
+
+  Widget _buildProfilePage(BuildContext context) {
+    final user = pb.authStore.model;
+    if (user == null) {
+      return LoginPage(); // Redirect ke login jika belum login
+    }
+    return ProfilePage(
+      name: user.data['name'] ?? 'Unknown',
+      email: user.data['email'] ?? 'No email',
+      phone: user.data['phone'] ?? 'No phone',
+      role: user.data['role'] ?? 'No role',
+    );
+  }
+
+  Widget _buildEditProfilePage(BuildContext context) {
+    final user = pb.authStore.model;
+    if (user == null) {
+      return LoginPage(); // Redirect ke login jika belum login
+    }
+    return EditProfilePage(
+      name: user.data['name'] ?? 'Unknown',
+      email: user.data['email'] ?? 'No email',
+      phone: user.data['phone'] ?? 'No phone',
+      role: user.data['role'] ?? 'No role',
     );
   }
 }

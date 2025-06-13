@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:pocketbase/pocketbase.dart';
-import 'pocketbase_services.dart';
+import '../../pocketbase_services.dart';
 import 'package:provider/provider.dart';
 import 'cart_provider.dart';
 
