@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:pocketbase/pocketbase.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'screens/user/cart_provider.dart';
 import 'screens/auth/login_page.dart';
 import 'screens/user/home_page.dart';
@@ -10,11 +10,21 @@ import 'screens/user/cart_page.dart';
 import 'screens/admin/admin_dashboard.dart';
 import 'screens/admin/adminprovider.dart';
 import 'screens/admin/add_product_page.dart';
-import 'screens/user/product_provider.dart';
+import 'screens/admin/product_provider.dart';
 import 'screens/profil/profil_page.dart';
-import 'screens/profil/edit_page.dart';
+import 'screens/profil/profil_page.dart';
 
-void main() {
+Future<void> initializeSupabase() async {
+  await Supabase.initialize(
+    url: 'https://eoltmoazpgypwbygtvcm.supabase.co',
+    anonKey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVvbHRtb2F6cGd5cHdieWd0dmNtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDk3ODYzNTIsImV4cCI6MjA2NTM2MjM1Mn0.eUSPqkyEeDurJKn-7ICUDeiDgPGNcWcIKKyFlpnNxHY',
+    debug: true,
+  );
+}
+
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await initializeSupabase();
   runApp(
     MultiProvider(
       providers: [
@@ -28,7 +38,7 @@ void main() {
 }
 
 class BakeryApp extends StatelessWidget {
-  final PocketBase pb = PocketBase('http://127.0.0.1:8090'); // Ganti dengan URL PocketBase Anda
+  final SupabaseClient supabase = Supabase.instance.client;
 
   @override
   Widget build(BuildContext context) {
@@ -67,28 +77,70 @@ class BakeryApp extends StatelessWidget {
   }
 
   Widget _buildProfilePage(BuildContext context) {
-    final user = pb.authStore.model;
+    final user = supabase.auth.currentUser;
     if (user == null) {
-      return LoginPage(); // Redirect ke login jika belum login
+      return LoginPage();
     }
-    return ProfilePage(
-      name: user.data['name'] ?? 'Unknown',
-      email: user.data['email'] ?? 'No email',
-      phone: user.data['phone'] ?? 'No phone',
-      role: user.data['role'] ?? 'No role',
+    return FutureBuilder<Map<String, dynamic>>(
+      future: supabase
+          .from('profiles')
+          .select('name, phone, role')
+          .eq('id', user.id)
+          .single(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return Center(child: CircularProgressIndicator());
+        }
+        if (snapshot.hasError || !snapshot.hasData) {
+          return ProfilePage(
+            name: 'Unknown',
+            email: user.email ?? 'No email',
+            phone: 'No phone',
+            role: 'No role',
+          );
+        }
+        final profile = snapshot.data!;
+        return ProfilePage(
+          name: profile['name'] ?? 'Unknown',
+          email: user.email ?? 'No email',
+          phone: profile['phone'] ?? 'No phone',
+          role: profile['role'] ?? 'No role',
+        );
+      },
     );
   }
 
   Widget _buildEditProfilePage(BuildContext context) {
-    final user = pb.authStore.model;
+    final user = supabase.auth.currentUser;
     if (user == null) {
-      return LoginPage(); // Redirect ke login jika belum login
+      return LoginPage();
     }
-    return EditProfilePage(
-      name: user.data['name'] ?? 'Unknown',
-      email: user.data['email'] ?? 'No email',
-      phone: user.data['phone'] ?? 'No phone',
-      role: user.data['role'] ?? 'No role',
+    return FutureBuilder<Map<String, dynamic>>(
+      future: supabase
+          .from('profiles')
+          .select('name, phone, role')
+          .eq('id', user.id)
+          .single(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return Center(child: CircularProgressIndicator());
+        }
+        if (snapshot.hasError || !snapshot.hasData) {
+          return EditProfilePage(
+            name: 'Unknown',
+            email: user.email ?? 'No email',
+            phone: 'No phone',
+            role: 'No role',
+          );
+        }
+        final profile = snapshot.data!;
+        return EditProfilePage(
+          name: profile['name'] ?? 'Unknown',
+          email: user.email ?? 'No email',
+          phone: profile['phone'] ?? 'No phone',
+          role: profile['role'] ?? 'No role',
+        );
+      },
     );
   }
 }

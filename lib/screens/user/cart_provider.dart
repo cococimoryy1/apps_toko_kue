@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:pocketbase/pocketbase.dart';
-import '../../pocketbase_services.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 class CartProvider with ChangeNotifier {
   List<Map<String, dynamic>> _cartItems = [];
@@ -24,14 +23,15 @@ class CartProvider with ChangeNotifier {
   }
 
   Future<void> addToCartWithDB(Map<String, dynamic> product, int quantity) async {
-    final pb = PocketBaseService().pb;
+    final _supabase = Supabase.instance.client;
     try {
-      if (!pb.authStore.isValid) {
+      print('Current user ID: ${_supabase.auth.currentUser?.id}'); // Added debug log
+      if (_supabase.auth.currentUser == null) {
         print('User not authenticated');
         return;
       }
-      await pb.collection('cart_items').create(body: {
-        'user': pb.authStore.model.id,
+      await _supabase.from('cart_items').insert({
+        'user': _supabase.auth.currentUser!.id,
         'product': product['id'],
         'quantity': quantity,
       });
@@ -68,27 +68,32 @@ class CartProvider with ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> fetchCartItems() async { // Ensure this is marked as async
-    final pb = PocketBaseService().pb;
+  Future<void> fetchCartItems() async {
+    final _supabase = Supabase.instance.client;
     try {
-      if (!pb.authStore.isValid) {
+      if (_supabase.auth.currentUser == null) {
         print('User not authenticated');
         return;
       }
-      final records = await pb.collection('cart_items').getFullList(
-        filter: 'user = "${pb.authStore.model.id}"',
-      );
-      _cartItems = await Future.wait(records.map((record) async {
-        final productId = record.data['product'];
-        final product = await pb.collection('products').getOne(productId); // Async call
+      final response = await _supabase
+          .from('cart_items')
+          .select('id, product, quantity')
+          .eq('user', _supabase.auth.currentUser!.id);
+      _cartItems = await Future.wait(response.map((record) async {
+        final product = await _supabase
+            .from('products')
+            .select('id, name, price, image')
+            .eq('id', record['product'])
+            .single();
+        String imageUrl = product['image'] != null
+            ? _supabase.storage.from('product_images').getPublicUrl(product['image'])
+            : '🍞';
         return {
-          'id': productId,
-          'name': product.data['name'] ?? 'No Name',
-          'price': (product.data['price'] ?? 0).toDouble(), // Ensure price is a double
-          'image': product.data['image'] != null
-              ? 'http://127.0.0.1:8091/api/files/products/${product.id}/${product.data['image']}'
-              : '🍞',
-          'quantity': record.data['quantity'] ?? 1, // Default to 1 if null
+          'id': record['product'],
+          'name': product['name'] as String? ?? 'No Name',
+          'price': (product['price'] as num?)?.toDouble() ?? 0,
+          'image': imageUrl,
+          'quantity': record['quantity'] as int? ?? 1,
         };
       }).toList());
       notifyListeners();

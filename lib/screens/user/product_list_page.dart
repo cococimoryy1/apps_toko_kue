@@ -1,8 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:pocketbase/pocketbase.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'product_detail_page.dart';
 import '../auth/login_page.dart';
-import '../../pocketbase_services.dart';
 
 class ProductListPage extends StatefulWidget {
   final String? categoryId; // Parameter opsional untuk filter kategori
@@ -14,29 +13,23 @@ class ProductListPage extends StatefulWidget {
 }
 
 class _ProductListPageState extends State<ProductListPage> {
-  final PocketBase _pb = PocketBaseService().pb; // Gunakan singleton dari PocketBaseService
+  final SupabaseClient _supabase = Supabase.instance.client;
   late Future<List<Map<String, dynamic>>> _productsFuture = Future.value([]);
+  List<Map<String, dynamic>> _categoryList = [];
+  Map<String, String> _categoryIdToName = {};
+  Map<String, String?> _categoryNameToId = {}; // Changed to String? for nullable IDs
   String selectedCategory = 'Semua';
   String searchQuery = '';
-
-  // Gunakan String? untuk mengizinkan null
-  final Map<String, String?> categoryMap = {
-    'Semua': null, // null menunjukkan semua kategori
-    '5kh2n433m0uzy7c': 'Roti',
-    '56j0fam3444x1s4': 'Kue',
-    'ax3633h8z3ntft2': 'Pastry',
-    '0741jtcj1zzs9oj': 'Donat',
-  };
 
   @override
   void initState() {
     super.initState();
-    _checkAuthAndFetchData();
+    _checkAuthAndLoadData();
   }
 
-  Future<void> _checkAuthAndFetchData() async {
-    if (!_pb.authStore.isValid) {
-      print('Sesi tidak valid di ProductListPage');
+  Future<void> _checkAuthAndLoadData() async {
+    final user = _supabase.auth.currentUser;
+    if (user == null || user.email == null || user.email!.isEmpty) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Sesi tidak valid, silakan login kembali')),
@@ -48,47 +41,73 @@ class _ProductListPageState extends State<ProductListPage> {
       });
       return;
     }
+
+    // Ambil kategori
+    _categoryList = await _fetchCategories();
+    _categoryIdToName = {
+      for (var cat in _categoryList)
+        if (cat['id'] != null) cat['id'] as String: cat['name'] as String
+    };
+    _categoryNameToId = {
+      for (var cat in _categoryList) cat['name'] as String: cat['id'] as String?
+    };
+
     setState(() {
+      selectedCategory = 'Semua';
       _productsFuture = _fetchProducts();
     });
   }
 
+  Future<List<Map<String, dynamic>>> _fetchCategories() async {
+    try {
+      final response = await _supabase.from('categories').select('id, name');
+      return [
+        {'id': null, 'name': 'Semua'}, // Tambahkan opsi "Semua" secara manual
+        ...response.map((cat) {
+          return {
+            'id': cat['id'] as String,
+            'name': cat['name'] as String,
+          };
+        }).toList()
+      ];
+    } catch (e) {
+      print('Error fetching categories: $e');
+      return [{'id': null, 'name': 'Semua'}]; // Fallback dengan opsi "Semua"
+    }
+  }
+
   Future<List<Map<String, dynamic>>> _fetchProducts() async {
     try {
-      String? filter;
-      if (widget.categoryId != null) {
-        filter = 'category = "${widget.categoryId}"';
-      } else if (selectedCategory != 'Semua') {
-        final categoryId = categoryMap.entries.firstWhere(
-          (entry) => entry.value == selectedCategory,
-          orElse: () => MapEntry('', null),
-        )?.key;
-        if (categoryId != null && categoryId.isNotEmpty) {
-          filter = 'category = "$categoryId"';
+      final query = _supabase.from('products').select('id, name, category, description, price, stock, rating, image, is_featured');
+      if (selectedCategory != 'Semua') {
+        final categoryId = _categoryNameToId[selectedCategory];
+        if (categoryId != null) {
+          query.eq('category', categoryId);
+          print('Applied filter: category = $categoryId');
         }
+      } else {
+        print('No category filter applied (Semua)');
       }
-      final records = await _pb.collection('products').getFullList(
-        filter: filter,
-      );
-      print('Raw records from products with filter $filter: $records');
-      if (records.isEmpty) {
-        print('No records found in products collection with filter $filter');
+      final response = await query.order('created', ascending: false);
+      print('Raw response from products: $response');
+      if (response.isEmpty) {
+        print('No records found with category ${selectedCategory != 'Semua' ? _categoryNameToId[selectedCategory] : 'Semua'}');
       }
-      return records.map((record) {
-        print('Processing record: ${record.data}');
-        String imageUrl = record.data['image'] != null
-            ? 'http://127.0.0.1:8091/api/files/products/${record.id}/${record.data['image']}'
+      return response.map((record) {
+        print('Processing record: $record');
+        String imageUrl = record['image'] != null
+            ? _supabase.storage.from('product_images').getPublicUrl(record['image'])
             : '🍞';
         return {
-          'id': record.id,
-          'name': record.data['name'] ?? 'No Name',
-          'category': record.data['category'] ?? 'Unknown',
-          'description': record.data['description'] ?? 'No description',
-          'price': record.data['price'] ?? 0,
-          'stock': record.data['stock'] ?? 0,
-          'rating': record.data['rating'] ?? 0.0,
+          'id': record['id'] as String,
+          'name': record['name'] as String? ?? 'No Name',
+          'category': record['category'] as String? ?? 'Unknown',
+          'description': record['description'] as String? ?? 'No description',
+          'price': (record['price'] as num?)?.toDouble() ?? 0,
+          'stock': (record['stock'] as num?)?.toInt() ?? 0,
+          'rating': (record['rating'] as num?)?.toDouble() ?? 0.0,
           'image': imageUrl,
-          'is_featured': record.data['is_featured'] ?? false,
+          'is_featured': record['is_featured'] as bool? ?? false,
         };
       }).toList();
     } catch (e) {
@@ -138,34 +157,51 @@ class _ProductListPageState extends State<ProductListPage> {
             Container(
               height: 60,
               padding: EdgeInsets.symmetric(vertical: 8),
-              child: ListView.builder(
+              child: ListView(
                 scrollDirection: Axis.horizontal,
                 padding: EdgeInsets.symmetric(horizontal: 16),
-                itemCount: categoryMap.values.length,
-                itemBuilder: (context, index) {
-                  final categoryName = categoryMap.values.elementAt(index) ?? 'Semua'; // Handle null
-                  final isSelected = selectedCategory == categoryName;
-                  return Padding(
-                    padding: EdgeInsets.only(right: 8),
-                    child: FilterChip(
-                      label: Text(categoryName),
-                      selected: isSelected,
-                      onSelected: (selected) {
-                        setState(() {
-                          selectedCategory = categoryName;
-                          _productsFuture = _fetchProducts(); // Perbarui data saat kategori berubah
-                        });
-                      },
-                      selectedColor: Color(0xFFF9A8D4),
-                      checkmarkColor: Color(0xFFEC4899),
-                      backgroundColor: Colors.white,
-                      labelStyle: TextStyle(
-                        color: isSelected ? Color(0xFFBE185D) : Colors.grey[600],
-                        fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-                      ),
+                children: [
+                  FilterChip(
+                    label: Text('Semua'),
+                    selected: selectedCategory == 'Semua',
+                    onSelected: (selected) {
+                      setState(() {
+                        selectedCategory = 'Semua';
+                        _productsFuture = _fetchProducts();
+                      });
+                    },
+                    selectedColor: Color(0xFFF9A8D4),
+                    checkmarkColor: Color(0xFFEC4899),
+                    backgroundColor: Colors.white,
+                    labelStyle: TextStyle(
+                      color: selectedCategory == 'Semua' ? Color(0xFFBE185D) : Colors.grey[600],
+                      fontWeight: selectedCategory == 'Semua' ? FontWeight.bold : FontWeight.normal,
                     ),
-                  );
-                },
+                  ),
+                  ..._categoryList.where((cat) => cat['name'] != 'Semua').map((cat) {
+                    final isSelected = selectedCategory == cat['name'];
+                    return Padding(
+                      padding: EdgeInsets.only(left: 8),
+                      child: FilterChip(
+                        label: Text(cat['name']),
+                        selected: isSelected,
+                        onSelected: (selected) {
+                          setState(() {
+                            selectedCategory = cat['name'];
+                            _productsFuture = _fetchProducts();
+                          });
+                        },
+                        selectedColor: Color(0xFFF9A8D4),
+                        checkmarkColor: Color(0xFFEC4899),
+                        backgroundColor: Colors.white,
+                        labelStyle: TextStyle(
+                          color: isSelected ? Color(0xFFBE185D) : Colors.grey[600],
+                          fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                        ),
+                      ),
+                    );
+                  }).toList(),
+                ],
               ),
             ),
             FutureBuilder<List<Map<String, dynamic>>>(
@@ -199,9 +235,7 @@ class _ProductListPageState extends State<ProductListPage> {
                 final products = snapshot.data!;
                 final filteredProducts = products.where((product) {
                   final matchesCategory = selectedCategory == 'Semua' ||
-                      (widget.categoryId != null
-                          ? product['category'] == widget.categoryId
-                          : categoryMap.entries.any((entry) => entry.value == selectedCategory && entry.key == product['category']));
+                      product['category'] == _categoryNameToId[selectedCategory];
                   final matchesSearch = product['name'].toLowerCase().contains(searchQuery.toLowerCase());
                   print('Product: ${product['name']}, Category: ${product['category']}, Matches Category: $matchesCategory, Matches Search: $matchesSearch');
                   return matchesCategory && matchesSearch;
@@ -293,7 +327,7 @@ class _ProductListPageState extends State<ProductListPage> {
                                                   borderRadius: BorderRadius.circular(12),
                                                 ),
                                                 child: Text(
-                                                  categoryMap[product['category']] ?? product['category'].toString(),
+                                                  _categoryIdToName[product['category']] ?? 'Unknown',
                                                   style: TextStyle(
                                                     fontSize: 10,
                                                     color: Color(0xFFBE185D),

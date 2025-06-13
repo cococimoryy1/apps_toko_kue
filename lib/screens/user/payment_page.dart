@@ -1,12 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:geocoding/geocoding.dart';
-import 'package:geolocator/geolocator.dart';
-import 'package:pocketbase/pocketbase.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:provider/provider.dart';
 import 'cart_provider.dart';
-import '../../pocketbase_services.dart';
-import 'package:flutter/foundation.dart'; // Added missing import for defaultTargetPlatform
 
 class PaymentPage extends StatefulWidget {
   final List<Map<String, dynamic>> cartItems;
@@ -26,17 +22,17 @@ class _PaymentPageState extends State<PaymentPage> {
   final _notesController = TextEditingController();
   String _paymentMethod = 'Cash on Delivery';
   String _status = 'pending';
-  late GoogleMapController mapController;
-  LatLng _selectedLocation = const LatLng(-6.1745, 106.8227); // Default: Jakarta
+  double _latitude = -6.1745; // Default: Jakarta latitude
+  double _longitude = 106.8227; // Default: Jakarta longitude
 
   @override
   void initState() {
     super.initState();
     // Pre-fill recipient name and phone if available from auth (optional)
-    final pb = PocketBaseService().pb;
-    if (pb.authStore.isValid) {
-      _recipientNameController.text = pb.authStore.model.data['name'] ?? '';
-      _phoneController.text = pb.authStore.model.data['phone'] ?? '';
+    final _supabase = Supabase.instance.client;
+    if (_supabase.auth.currentUser != null) {
+      _recipientNameController.text = _supabase.auth.currentUser!.userMetadata?['name'] ?? '';
+      _phoneController.text = _supabase.auth.currentUser!.userMetadata?['phone'] ?? '';
     }
   }
 
@@ -46,94 +42,55 @@ class _PaymentPageState extends State<PaymentPage> {
     _phoneController.dispose();
     _addressController.dispose();
     _notesController.dispose();
-    mapController.dispose();
     super.dispose();
   }
 
-  Future<void> _getCurrentLocation() async {
-  bool serviceEnabled;
-  LocationPermission permission;
-
-  // Cek apakah lokasi aktif
-  serviceEnabled = await Geolocator.isLocationServiceEnabled();
-  if (!serviceEnabled) {
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Layanan lokasi tidak aktif')));
-    return;
-  }
-
-  // Cek permission
-  permission = await Geolocator.checkPermission();
-  if (permission == LocationPermission.denied) {
-    permission = await Geolocator.requestPermission();
-    if (permission == LocationPermission.denied) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Izin lokasi ditolak')));
-      return;
-    }
-  }
-
-  if (permission == LocationPermission.deniedForever) {
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Izin lokasi ditolak permanen')));
-    return;
-  }
-
-  // Ambil posisi
-  Position position = await Geolocator.getCurrentPosition(desiredAccuracy: LocationAccuracy.high);
-  setState(() {
-    _selectedLocation = LatLng(position.latitude, position.longitude);
-  });
-
-  // Ambil alamat dari koordinat
-  List<Placemark> placemarks = await placemarkFromCoordinates(position.latitude, position.longitude);
-  if (placemarks.isNotEmpty) {
-    final place = placemarks.first;
-    setState(() {
-      _addressController.text =
-          '${place.street}, ${place.subLocality}, ${place.locality}, ${place.postalCode}, ${place.country}';
-    });
-  }
-}
-
   Future<void> _getCoordinatesFromAddress(String address) async {
-    if (!kIsWeb && (defaultTargetPlatform != TargetPlatform.windows)) {
-      try {
-        List<Location> locations = await locationFromAddress(address);
-        if (locations.isNotEmpty) {
-          setState(() {
-            _selectedLocation = LatLng(locations.first.latitude, locations.first.longitude);
-            mapController.animateCamera(CameraUpdate.newLatLng(_selectedLocation));
-          });
-        }
-      } catch (e) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Alamat tidak ditemukan')));
+    try {
+      List<Location> locations = await locationFromAddress(address);
+      if (locations.isNotEmpty) {
+        setState(() {
+          _latitude = locations.first.latitude;
+          _longitude = locations.first.longitude;
+        });
+        print('Coordinates resolved: Latitude: $_latitude, Longitude: $_longitude');
+      } else {
+        print('No locations found for address: $address');
+        setState(() {
+          _latitude = -6.1745; // Fallback to default Jakarta latitude
+          _longitude = 106.8227; // Fallback to default Jakarta longitude
+        });
       }
-    }
-  }
-
-  void _onMapTapped(LatLng position) {
-    if (!kIsWeb && (defaultTargetPlatform != TargetPlatform.windows)) {
+    } catch (e) {
+      print('Error resolving address: $e');
       setState(() {
-        _selectedLocation = position;
-        mapController.animateCamera(CameraUpdate.newLatLng(_selectedLocation));
+        _latitude = -6.1745; // Fallback to default
+        _longitude = 106.8227; // Fallback to default
       });
     }
   }
 
   Future<void> _submitOrder() async {
     if (_formKey.currentState!.validate()) {
-      final pb = PocketBaseService().pb;
+      final _supabase = Supabase.instance.client;
       try {
-        if (!pb.authStore.isValid) {
-          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Please log in to place an order.')));
+        if (_supabase.auth.currentUser == null) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Silakan login untuk melakukan pemesanan')),
+          );
           return;
         }
 
+        // Convert address to coordinates before submitting
+        await _getCoordinatesFromAddress(_addressController.text);
+
         final orderData = {
-          'user': pb.authStore.model.id,
+          'user': _supabase.auth.currentUser!.id,
           'recipient_name': _recipientNameController.text,
           'phone': _phoneController.text,
           'address': _addressController.text,
-          'latitude': _selectedLocation.latitude,
-          'longitude': _selectedLocation.longitude,
+          'latitude': _latitude,
+          'longitude': _longitude,
           'total': widget.totalPrice.toInt(),
           'status': _status,
           'notes': _notesController.text,
@@ -142,15 +99,20 @@ class _PaymentPageState extends State<PaymentPage> {
           'updated': DateTime.now().toIso8601String(),
         };
 
-        await pb.collection('orders').create(body: orderData);
+        await _supabase.from('orders').insert(orderData);
 
         final cartProvider = Provider.of<CartProvider>(context, listen: false);
         cartProvider.clearCart();
 
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Pesanan berhasil dibuat!')));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Pesanan berhasil dibuat!')),
+        );
         Navigator.pop(context);
       } catch (e) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error placing order: $e')));
+        print('Error submitting order: $e');
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error placing order: $e')),
+        );
       }
     }
   }
@@ -210,49 +172,14 @@ class _PaymentPageState extends State<PaymentPage> {
                   return null;
                 },
               ),
-             TextFormField(
-              controller: _addressController,
-              decoration: InputDecoration(labelText: 'Masukkan Alamat'),
-              onChanged: _getCoordinatesFromAddress,
-              validator: (value) {
-                if (value == null || value.isEmpty) return 'Alamat tidak boleh kosong';
-                return null;
-              },
-            ),
-            SizedBox(height: 8),
-          ElevatedButton.icon(
-            icon: Icon(Icons.my_location),
-            label: Text('Gunakan Lokasi Saya'),
-            onPressed: _getCurrentLocation,
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.blueAccent),
-          ),
-
-              SizedBox(height: 16),
-              Text('Peta Lokasi', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-              if (kIsWeb || defaultTargetPlatform == TargetPlatform.windows)
-                Container(
-                  height: 200,
-                  color: Colors.grey[300],
-                  child: Center(
-                    child: Text('Peta tidak didukung di platform ini. Gunakan koordinat default.'),
-                  ),
-                )
-              else
-                Container(
-                  height: 200,
-                  child: GoogleMap(
-                    onMapCreated: (controller) => mapController = controller,
-                    initialCameraPosition: CameraPosition(target: _selectedLocation, zoom: 12),
-                    onTap: _onMapTapped,
-                    markers: {
-                      Marker(
-                        markerId: MarkerId('selected-location'),
-                        position: _selectedLocation,
-                        infoWindow: InfoWindow(title: 'Lokasi Terpilih'),
-                      ),
-                    },
-                  ),
-                ),
+              TextFormField(
+                controller: _addressController,
+                decoration: InputDecoration(labelText: 'Masukkan Alamat'),
+                validator: (value) {
+                  if (value == null || value.isEmpty) return 'Alamat tidak boleh kosong';
+                  return null;
+                },
+              ),
               SizedBox(height: 16),
               Text('Catatan Tambahan', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
               TextFormField(

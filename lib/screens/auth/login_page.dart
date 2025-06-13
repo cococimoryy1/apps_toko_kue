@@ -1,8 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:pocketbase/pocketbase.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'register_page.dart';
 import '../user/home_page.dart';
-import '../../pocketbase_services.dart';
 import '../admin/admin_dashboard.dart';
 
 class LoginPage extends StatefulWidget {
@@ -18,7 +17,7 @@ class _LoginPageState extends State<LoginPage> {
   bool _isLoading = false;
   bool _rememberMe = false;
 
-  final PocketBase _pb = PocketBaseService().pb;
+  final SupabaseClient _supabase = Supabase.instance.client;
 
   Future<void> _login() async {
     if (_formKey.currentState!.validate()) {
@@ -27,12 +26,17 @@ class _LoginPageState extends State<LoginPage> {
       });
 
       try {
-        await _pb.collection('users').authWithPassword(
-          _emailController.text,
-          _passwordController.text,
+        final response = await _supabase.auth.signInWithPassword(
+          email: _emailController.text,
+          password: _passwordController.text,
         );
-        final userRole = _pb.authStore.model?.data['role'] as String? ?? 'customer';
-        if (userRole == 'admin') {
+
+        if (response.user == null) {
+          throw Exception('Login gagal: Pengguna tidak ditemukan atau kredensial salah');
+        }
+
+        // Mengarahkan berdasarkan email
+        if (_emailController.text == 'admin@gmail.com') {
           Navigator.pushReplacement(
             context,
             MaterialPageRoute(builder: (context) => AdminDashboard()),
@@ -43,10 +47,17 @@ class _LoginPageState extends State<LoginPage> {
             MaterialPageRoute(builder: (context) => HomePage()),
           );
         }
+      } on AuthException catch (e) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Login gagal: ${e.message}'),
+            backgroundColor: Colors.red,
+          ),
+        );
       } catch (e) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Login gagal: $e'),
+            content: Text('Login gagal: Terjadi kesalahan, coba lagi'),
             backgroundColor: Colors.red,
           ),
         );
@@ -69,7 +80,6 @@ class _LoginPageState extends State<LoginPage> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               SizedBox(height: 40),
-              
               Center(
                 child: Column(
                   children: [
@@ -112,9 +122,7 @@ class _LoginPageState extends State<LoginPage> {
                   ],
                 ),
               ),
-              
               SizedBox(height: 40),
-              
               Form(
                 key: _formKey,
                 child: Column(
@@ -156,9 +164,7 @@ class _LoginPageState extends State<LoginPage> {
                         return null;
                       },
                     ),
-                    
                     SizedBox(height: 20),
-                    
                     Text(
                       'Password',
                       style: TextStyle(
@@ -200,12 +206,10 @@ class _LoginPageState extends State<LoginPage> {
                         if (value == null || value.isEmpty) {
                           return 'Password tidak boleh kosong';
                         }
-                        return null; // Hilangkan validasi kompleksitas
+                        return null;
                       },
                     ),
-                    
                     SizedBox(height: 16),
-                    
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
@@ -251,9 +255,7 @@ class _LoginPageState extends State<LoginPage> {
                         ),
                       ],
                     ),
-                    
                     SizedBox(height: 32),
-                    
                     SizedBox(
                       width: double.infinity,
                       height: 50,
@@ -292,9 +294,7 @@ class _LoginPageState extends State<LoginPage> {
                               ),
                       ),
                     ),
-                    
                     SizedBox(height: 24),
-                    
                     Container(
                       width: double.infinity,
                       padding: EdgeInsets.all(16),
@@ -333,9 +333,7 @@ class _LoginPageState extends State<LoginPage> {
                         ],
                       ),
                     ),
-                    
                     SizedBox(height: 32),
-                    
                     Row(
                       children: [
                         Expanded(child: Divider(color: Colors.grey[300])),
@@ -349,9 +347,7 @@ class _LoginPageState extends State<LoginPage> {
                         Expanded(child: Divider(color: Colors.grey[300])),
                       ],
                     ),
-                    
                     SizedBox(height: 24),
-                    
                     Row(
                       children: [
                         Expanded(
@@ -402,9 +398,7 @@ class _LoginPageState extends State<LoginPage> {
                   ],
                 ),
               ),
-              
               SizedBox(height: 32),
-              
               Center(
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.center,

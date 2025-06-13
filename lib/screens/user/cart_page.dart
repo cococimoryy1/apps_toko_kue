@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'cart_provider.dart';
-import 'payment_page.dart'; // Impor halaman pembayaran
+import 'payment_page.dart';
 import '../admin/admin_dashboard.dart';
 
 class CartPage extends StatefulWidget {
@@ -59,16 +59,15 @@ class _CartPageState extends State<CartPage> {
                 );
               },
             ),
-          // Tombol untuk Admin Dashboard
-          IconButton(
-            icon: Icon(Icons.admin_panel_settings),
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (context) => AdminDashboard()),
-              );
-            },
-          ),
+          // IconButton(
+          //   icon: Icon(Icons.admin_panel_settings),
+          //   onPressed: () {
+          //     Navigator.push(
+          //       context,
+          //       MaterialPageRoute(builder: (context) => AdminDashboard()),
+          //     );
+          //   },
+          // ),
         ],
       ),
       body: cartProvider.cartItems.isEmpty
@@ -154,7 +153,7 @@ class _CartPageState extends State<CartPage> {
                                     ),
                                     SizedBox(height: 4),
                                     Text(
-                                      'Rp ${item['price']}',
+                                      'Rp ${item['price'].toStringAsFixed(0)}',
                                       style: TextStyle(
                                         color: Color(0xFFEC4899),
                                         fontWeight: FontWeight.w600,

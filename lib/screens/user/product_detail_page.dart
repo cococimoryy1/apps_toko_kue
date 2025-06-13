@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:pocketbase/pocketbase.dart';
-import '../../pocketbase_services.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:provider/provider.dart';
 import 'cart_provider.dart';
 
@@ -14,7 +13,7 @@ class ProductDetailPage extends StatefulWidget {
 }
 
 class _ProductDetailPageState extends State<ProductDetailPage> {
-  final PocketBase _pb = PocketBaseService().pb;
+  final SupabaseClient _supabase = Supabase.instance.client;
   late Future<Map<String, dynamic>> _productFuture;
   int quantity = 1;
 
@@ -26,20 +25,24 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
 
   Future<Map<String, dynamic>> _fetchProduct() async {
     try {
-      final record = await _pb.collection('products').getOne(widget.productId);
-      String imageUrl = record.data['image'] != null
-          ? 'http://127.0.0.1:8091/api/files/products/${record.id}/${record.data['image']}'
+      final response = await _supabase
+          .from('products')
+          .select('id, name, category, description, price, stock, rating, image, is_featured')
+          .eq('id', widget.productId)
+          .single();
+      String imageUrl = response['image'] != null
+          ? _supabase.storage.from('product_images').getPublicUrl(response['image'])
           : '🍞';
       return {
-        'id': record.id,
-        'name': record.data['name'] ?? 'No Name',
-        'category': record.data['category'] ?? 'Unknown',
-        'description': record.data['description'] ?? 'No description',
-        'price': record.data['price'] ?? 0,
-        'stock': record.data['stock'] ?? 0,
-        'rating': record.data['rating'] ?? 0.0,
+        'id': response['id'] as String,
+        'name': response['name'] as String? ?? 'No Name',
+        'category': response['category'] as String? ?? 'Unknown',
+        'description': response['description'] as String? ?? 'No description',
+        'price': (response['price'] as num?)?.toDouble() ?? 0,
+        'stock': (response['stock'] as num?)?.toInt() ?? 0,
+        'rating': (response['rating'] as num?)?.toDouble() ?? 0.0,
         'image': imageUrl,
-        'is_featured': record.data['is_featured'] ?? false,
+        'is_featured': response['is_featured'] as bool? ?? false,
       };
     } catch (e) {
       print('Error fetching product: $e');

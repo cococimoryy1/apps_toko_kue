@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'adminprovider.dart';
 import 'add_product_page.dart';
-import '../../pocketbase_services.dart'; // Pastikan file ini ada untuk logout
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 class AdminDashboard extends StatefulWidget {
   @override
@@ -37,61 +37,51 @@ class _AdminDashboardState extends State<AdminDashboard> {
   }
 
   String getStatusText(String status) {
-    switch (status) {
-      case 'pending':
-        return 'Menunggu';
-      case 'confirmed':
-        return 'Dikonfirmasi';
-      case 'preparing':
-        return 'Diproses';
-      case 'delivering':
-        return 'Dikirim';
-      case 'completed':
-        return 'Selesai';
-      case 'cancelled':
-        return 'Dibatalkan';
-      default:
-        return status;
+    switch (status.toLowerCase()) {
+      case 'pending': return 'Menunggu';
+      case 'confirmed': return 'Dikonfirmasi';
+      case 'preparing': return 'Diproses';
+      case 'delivering': return 'Dikirim';
+      case 'completed': return 'Selesai';
+      case 'cancelled': return 'Dibatalkan';
+      default: return status;
     }
   }
 
   Color getStatusColor(String status) {
-    switch (status) {
-      case 'pending':
-        return Colors.orange;
-      case 'confirmed':
-        return Colors.blue;
-      case 'preparing':
-        return Color(0xFFEC4899);
-      case 'delivering':
-        return Colors.purple;
-      case 'completed':
-        return Colors.green;
-      case 'cancelled':
-        return Colors.red;
-      default:
-        return Colors.grey;
+    switch (status.toLowerCase()) {
+      case 'pending': return Colors.orange;
+      case 'confirmed': return Colors.blue;
+      case 'preparing': return Color(0xFFEC4899);
+      case 'delivering': return Colors.purple;
+      case 'completed': return Colors.green;
+      case 'cancelled': return Colors.red;
+      default: return Colors.grey;
     }
   }
 
   int getPendingOrdersCount() {
-    return Provider.of<AdminProvider>(context).orders.where((order) => order['status'] == 'pending').length;
+    return Provider.of<AdminProvider>(context).orders.where((order) => order['status'].toLowerCase() == 'pending').length;
   }
 
   double getTotalSales() {
     return Provider.of<AdminProvider>(context).orders.fold(0.0, (sum, order) => sum + (order['total'] as num));
   }
 
-  Future<void> _logout() async {
-    try {
-      PocketBaseService().pb.authStore.clear(); // Panggil clear tanpa await karena return void
-      Navigator.pushNamedAndRemoveUntil(context, '/login', (route) => false); // Navigasi setelah clear
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Gagal logout: $e')),
-      );
-    }
+Future<void> _logout() async {
+  try {
+    final adminProvider = Provider.of<AdminProvider>(context, listen: false);
+    adminProvider.clearOrders(); // Tambahkan metode ini jika belum ada
+    await _supabase.auth.signOut();
+    Navigator.pushNamedAndRemoveUntil(context, '/login', (route) => false);
+  } catch (e) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Gagal logout: $e')),
+    );
   }
+}
+
+  final SupabaseClient _supabase = Supabase.instance.client;
 
   @override
   Widget build(BuildContext context) {
@@ -155,7 +145,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
           ),
           IconButton(
             icon: Icon(Icons.logout),
-            onPressed: _logout, // Tombol logout terpisah
+            onPressed: _logout,
           ),
         ],
       ),
@@ -248,7 +238,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
               itemCount: orders.length,
               itemBuilder: (context, index) {
                 final order = orders[index];
-                final created = order['created'] ?? DateTime.now();
+                final created = order['created'];
                 return Card(
                   margin: EdgeInsets.only(bottom: 12),
                   child: Padding(
@@ -260,7 +250,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
                             Text(
-                              'Pesanan #${order['id']}',
+                              'Pesanan #$index',
                               style: TextStyle(
                                 fontSize: 18,
                                 fontWeight: FontWeight.bold,
@@ -310,17 +300,9 @@ class _AdminDashboardState extends State<AdminDashboard> {
                                   Icon(Icons.person, size: 16, color: Color(0xFFEC4899)),
                                   SizedBox(width: 8),
                                   Text(
-                                    order['customer']['name'],
+                                    'User ID: ${order['recipient_name'] ?? 'Unknown'}',
                                     style: TextStyle(fontWeight: FontWeight.w600),
                                   ),
-                                ],
-                              ),
-                              SizedBox(height: 4),
-                              Row(
-                                children: [
-                                  Icon(Icons.phone, size: 16, color: Color(0xFFEC4899)),
-                                  SizedBox(width: 8),
-                                  Text(order['customer']['phone']),
                                 ],
                               ),
                               SizedBox(height: 4),
@@ -331,13 +313,26 @@ class _AdminDashboardState extends State<AdminDashboard> {
                                   SizedBox(width: 8),
                                   Expanded(
                                     child: Text(
-                                      order['address'],
+                                      'Alamat: ${order['address']}',
                                       style: TextStyle(fontSize: 12),
                                     ),
                                   ),
                                 ],
                               ),
-                              if (order['customer']['notes'].isNotEmpty) ...[
+                              if (order['latitude'] != null && order['longitude'] != null) ...[
+                                SizedBox(height: 4),
+                                Row(
+                                  children: [
+                                    Icon(Icons.pin_drop, size: 16, color: Color(0xFFEC4899)),
+                                    SizedBox(width: 8),
+                                    Text(
+                                      'Lat: ${order['latitude']}, Long: ${order['longitude']}',
+                                      style: TextStyle(fontSize: 12),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                              if (order['notes']?.isNotEmpty ?? false) ...[
                                 SizedBox(height: 4),
                                 Row(
                                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -346,7 +341,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
                                     SizedBox(width: 8),
                                     Expanded(
                                       child: Text(
-                                        'Catatan: ${order['customer']['notes']}',
+                                        'Catatan: ${order['notes']}',
                                         style: TextStyle(
                                           fontSize: 12,
                                           fontStyle: FontStyle.italic,
@@ -378,7 +373,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
                               ),
                             ),
                             Text(
-                              'Rp ${order['total']}',
+                              'Rp ${order['total']?.toInt() ?? 0}',
                               style: TextStyle(
                                 fontWeight: FontWeight.bold,
                                 fontSize: 16,
@@ -388,7 +383,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
                           ],
                         ),
                         SizedBox(height: 12),
-                        if (order['status'] == 'pending') ...[
+                        if (order['status']?.toLowerCase() == 'pending') ...[
                           Row(
                             children: [
                               Expanded(
@@ -414,37 +409,83 @@ class _AdminDashboardState extends State<AdminDashboard> {
                               ),
                             ],
                           ),
-                        ] else if (order['status'] == 'confirmed') ...[
-                          SizedBox(
-                            width: double.infinity,
-                            child: ElevatedButton(
-                              onPressed: () => updateOrderStatus(index, 'preparing'),
-                              child: Text('Mulai Proses'),
-                            ),
-                          ),
-                        ] else if (order['status'] == 'preparing') ...[
-                          SizedBox(
-                            width: double.infinity,
-                            child: ElevatedButton(
-                              onPressed: () => updateOrderStatus(index, 'delivering'),
-                              child: Text('Kirim Pesanan'),
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: Colors.purple,
-                                foregroundColor: Colors.white,
+                        ] else if (order['status']?.toLowerCase() == 'confirmed') ...[
+                          Row(
+                            children: [
+                              Expanded(
+                                child: ElevatedButton(
+                                  onPressed: () => updateOrderStatus(index, 'preparing'),
+                                  child: Text('Proses'),
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: Color(0xFFEC4899),
+                                    foregroundColor: Colors.white,
+                                  ),
+                                ),
                               ),
-                            ),
-                          ),
-                        ] else if (order['status'] == 'delivering') ...[
-                          SizedBox(
-                            width: double.infinity,
-                            child: ElevatedButton(
-                              onPressed: () => updateOrderStatus(index, 'completed'),
-                              child: Text('Selesai'),
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: Colors.green,
-                                foregroundColor: Colors.white,
+                              SizedBox(width: 8),
+                              Expanded(
+                                child: ElevatedButton(
+                                  onPressed: () => updateOrderStatus(index, 'cancelled'),
+                                  child: Text('Batalkan'),
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: Colors.red,
+                                    foregroundColor: Colors.white,
+                                  ),
+                                ),
                               ),
-                            ),
+                            ],
+                          ),
+                        ] else if (order['status']?.toLowerCase() == 'preparing') ...[
+                          Row(
+                            children: [
+                              Expanded(
+                                child: ElevatedButton(
+                                  onPressed: () => updateOrderStatus(index, 'delivering'),
+                                  child: Text('Kirim'),
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: Colors.blue,
+                                    foregroundColor: Colors.white,
+                                  ),
+                                ),
+                              ),
+                              SizedBox(width: 8),
+                              Expanded(
+                                child: ElevatedButton(
+                                  onPressed: () => updateOrderStatus(index, 'cancelled'),
+                                  child: Text('Batalkan'),
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: Colors.red,
+                                    foregroundColor: Colors.white,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ] else if (order['status']?.toLowerCase() == 'delivering') ...[
+                          Row(
+                            children: [
+                              Expanded(
+                                child: ElevatedButton(
+                                  onPressed: () => updateOrderStatus(index, 'completed'),
+                                  child: Text('Selesai'),
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: Colors.purple,
+                                    foregroundColor: Colors.white,
+                                  ),
+                                ),
+                              ),
+                              SizedBox(width: 8),
+                              Expanded(
+                                child: ElevatedButton(
+                                  onPressed: () => updateOrderStatus(index, 'cancelled'),
+                                  child: Text('Batalkan'),
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: Colors.red,
+                                    foregroundColor: Colors.white,
+                                  ),
+                                ),
+                              ),
+                            ],
                           ),
                         ],
                       ],

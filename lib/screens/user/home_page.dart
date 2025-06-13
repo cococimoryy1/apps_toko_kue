@@ -1,10 +1,9 @@
 import 'package:flutter/material.dart';
-import 'package:pocketbase/pocketbase.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'product_list_page.dart';
 import 'cart_page.dart';
 import '../profil/profil_page.dart';
 import '../auth/login_page.dart';
-import '../../pocketbase_services.dart';
 
 class HomePage extends StatefulWidget {
   @override
@@ -12,7 +11,7 @@ class HomePage extends StatefulWidget {
 }
 
 class _HomePageState extends State<HomePage> {
-  final PocketBase _pb = PocketBaseService().pb;
+  final SupabaseClient _supabase = Supabase.instance.client;
   late Future<List<Map<String, dynamic>>> _categoriesFuture = Future.value([]);
   late Future<List<Map<String, dynamic>>> _featuredProductsFuture = Future.value([]);
   int _currentIndex = 0;
@@ -25,7 +24,8 @@ class _HomePageState extends State<HomePage> {
   }
 
   Future<void> _checkAuthAndFetchData() async {
-    if (!_pb.authStore.isValid) {
+    final user = _supabase.auth.currentUser;
+    if (user == null || user.email == null || user.email!.isEmpty) {
       print('Sesi tidak valid di HomePage');
       WidgetsBinding.instance.addPostFrameCallback((_) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -50,7 +50,7 @@ class _HomePageState extends State<HomePage> {
 
   Future<void> _logout() async {
     try {
-      _pb.authStore.clear(); // clear() adalah metode sinkron
+      await _supabase.auth.signOut();
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Berhasil logout')),
       );
@@ -68,32 +68,32 @@ class _HomePageState extends State<HomePage> {
 
   Future<List<Map<String, dynamic>>> _fetchCategories() async {
     try {
-      final records = await _pb.collection('categories').getFullList();
-      print('Raw categories data: $records');
-      if (records.isEmpty) {
+      final response = await _supabase
+          .from('categories')
+          .select('id, name')
+          .order('name', ascending: true);
+      print('Raw categories data: $response');
+      if (response.isEmpty) {
         print('No categories found');
         return [];
       }
-      return records.map((record) {
+      return response.map((record) {
         String icon = '🍞';
-        switch (record.data['name']?.toString().toLowerCase()) {
+        switch (record['name']?.toString().toLowerCase()) {
+          case 'donut':
+            icon = '🍩';
+            break;
           case 'kue':
             icon = '🎂';
             break;
           case 'pastry':
             icon = '🥐';
             break;
-          case 'donat':
-            icon = '🍩';
-            break;
-          case 'roti':
-            icon = '🍞';
-            break;
         }
-        print('Processing category: ${record.data}');
+        print('Processing category: $record');
         return {
-          'id': record.id,
-          'name': record.data['name'] ?? 'No Name',
+          'id': record['id'] as String,
+          'name': record['name'] as String? ?? 'No Name',
           'icon': icon,
           'color': Color(0xFFF9A8D4),
         };
@@ -106,22 +106,24 @@ class _HomePageState extends State<HomePage> {
 
   Future<List<Map<String, dynamic>>> _fetchFeaturedProducts() async {
     try {
-      final records = await _pb.collection('products').getFullList(
-        filter: 'is_featured = true',
-      );
-      print('Raw featured products data: $records');
-      if (records.isEmpty) {
+      final response = await _supabase
+          .from('products')
+          .select('id, name, price, image, rating, category')
+          .eq('is_featured', true)
+          .order('created', ascending: false);
+      print('Raw featured products data: $response');
+      if (response.isEmpty) {
         print('No featured products found, check if is_featured is true');
       }
-      return records.map((record) {
-        print('Processing featured product data: ${record.data}');
+      return response.map((record) {
+        print('Processing featured product data: $record');
         return {
-          'id': record.id,
-          'name': record.data['name'] ?? 'No Name',
-          'price': record.data['price'] ?? 0,
-          'image': record.data['image'] ?? '',
-          'rating': record.data['rating'] ?? 0.0,
-          'category': record.data['category'] ?? 'Unknown',
+          'id': record['id'] as String,
+          'name': record['name'] as String? ?? 'No Name',
+          'price': (record['price'] as num?)?.toDouble() ?? 0,
+          'image': record['image'] as String? ?? '',
+          'rating': (record['rating'] as num?)?.toDouble() ?? 0.0,
+          'category': record['category'] as String? ?? 'Unknown',
         };
       }).toList();
     } catch (e) {
@@ -157,16 +159,16 @@ class _HomePageState extends State<HomePage> {
           IconButton(
             icon: Icon(Icons.person_outline, color: Color(0xFFEC4899)),
             onPressed: () {
-              final user = _pb.authStore.model;
+              final user = _supabase.auth.currentUser;
               if (user != null) {
                 Navigator.push(
                   context,
                   MaterialPageRoute(
                     builder: (context) => ProfilePage(
-                      name: user.data['name'] ?? 'Unknown',
-                      email: user.data['email'] ?? 'No email',
-                      phone: user.data['phone'] ?? 'No phone',
-                      role: user.data['role'] ?? 'No role',
+                      name: user.userMetadata?['name'] ?? 'Unknown',
+                      email: user.email ?? 'No email',
+                      phone: user.userMetadata?['phone'] ?? 'No phone',
+                      role: user.userMetadata?['role'] ?? 'No role',
                     ),
                   ),
                 );

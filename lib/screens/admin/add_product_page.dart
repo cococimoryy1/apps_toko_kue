@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
-import 'package:pocketbase/pocketbase.dart';
 import 'package:provider/provider.dart';
-import '../user/product_provider.dart';
-import '../../pocketbase_services.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:image_picker/image_picker.dart';
+import 'dart:io';
+import 'product_provider.dart'; // Adjust the import path as needed
 
 class AddProductPage extends StatefulWidget {
   @override
@@ -11,26 +12,47 @@ class AddProductPage extends StatefulWidget {
 
 class _AddProductPageState extends State<AddProductPage> {
   final _formKey = GlobalKey<FormState>();
-  String _name = '';
-  String _description = '';
-  double _price = 0.0;
-  int _stock = 0;
+  late TextEditingController _nameController;
+  late TextEditingController _descriptionController;
+  late TextEditingController _priceController;
+  late TextEditingController _stockController;
+  late TextEditingController _imageUrlController;
   String _categoryId = '';
   bool _isFeatured = false;
-  String searchQuery = '';
   String? _editingProductId;
+  String searchQuery = '';
   bool _isLoading = false;
+  List<String> _images = [];
+
+  final ImagePicker _picker = ImagePicker();
+  final SupabaseClient _supabase = Supabase.instance.client;
+
+  @override
+  void initState() {
+    super.initState();
+    _nameController = TextEditingController();
+    _descriptionController = TextEditingController();
+    _priceController = TextEditingController();
+    _stockController = TextEditingController();
+    _imageUrlController = TextEditingController();
+  }
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
     final productProvider = Provider.of<ProductProvider>(context, listen: false);
-    if (productProvider.products.isEmpty) {
-      productProvider.fetchProducts();
-    }
-    if (productProvider.categories.isEmpty) {
-      productProvider.fetchCategories();
-    }
+    if (productProvider.products.isEmpty) productProvider.fetchProducts();
+    if (productProvider.categories.isEmpty) productProvider.fetchCategories();
+  }
+
+  @override
+  void dispose() {
+    _nameController.dispose();
+    _descriptionController.dispose();
+    _priceController.dispose();
+    _stockController.dispose();
+    _imageUrlController.dispose();
+    super.dispose();
   }
 
   Future<void> _submitForm() async {
@@ -43,49 +65,35 @@ class _AddProductPageState extends State<AddProductPage> {
     });
 
     try {
-      final pb = PocketBaseService().pb;
-
-      // Ensure authentication
-      if (!PocketBaseService().isAuthenticated()) {
-        await PocketBaseService().authWithPassword('admin@gmail.com', '12345678');
+      final user = _supabase.auth.currentUser;
+      if (user == null) {
+        throw Exception('Tidak ada sesi autentikasi, silakan login ulang');
       }
 
-      final body = {
-        'name': _name,
-        'description': _description,
-        'price': _price,
-        'stock': _stock,
+      final product = {
+        'name': _nameController.text,
+        'description': _descriptionController.text,
+        'price': double.tryParse(_priceController.text) ?? 0.0,
+        'stock': int.tryParse(_stockController.text) ?? 0,
         'category': _categoryId,
         'is_featured': _isFeatured,
+        'images': _imageUrlController.text.isNotEmpty ? _imageUrlController.text : null,
       };
 
+      final productProvider = Provider.of<ProductProvider>(context, listen: false);
       if (_editingProductId != null) {
-        // Update existing product
-        await pb.collection('products').update(
-          _editingProductId!,
-          body: body,
-        );
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Produk berhasil diperbarui')),
-        );
+        await productProvider.updateProduct(_editingProductId!, product);
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Produk berhasil diperbarui')));
       } else {
-        // Create new product
-        await pb.collection('products').create(body: body);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Produk berhasil ditambahkan')),
-        );
+        await productProvider.addProduct(product);
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Produk berhasil ditambahkan')));
       }
 
-      // Refresh products list
-      final productProvider = Provider.of<ProductProvider>(context, listen: false);
-      await productProvider.fetchProducts();
-
+      await productProvider.fetchProducts(); // Refresh the product list
       _clearForm();
     } catch (e) {
       print('Error saving product: $e');
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Gagal menyimpan produk: $e')),
-      );
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Gagal menyimpan produk: $e')));
     } finally {
       setState(() {
         _isLoading = false;
@@ -94,16 +102,17 @@ class _AddProductPageState extends State<AddProductPage> {
   }
 
   void _clearForm() {
+    _nameController.clear();
+    _descriptionController.clear();
+    _priceController.clear();
+    _stockController.clear();
+    _imageUrlController.clear();
     setState(() {
-      _name = '';
-      _description = '';
-      _price = 0.0;
-      _stock = 0;
       _categoryId = '';
       _isFeatured = false;
       _editingProductId = null;
+      _images = [];
     });
-    _formKey.currentState?.reset();
   }
 
   Future<void> _deleteProduct(String productId) async {
@@ -113,47 +122,38 @@ class _AddProductPageState extends State<AddProductPage> {
         title: Text('Konfirmasi Hapus'),
         content: Text('Apakah Anda yakin ingin menghapus produk ini?'),
         actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: Text('Batal'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: Text('Hapus', style: TextStyle(color: Colors.red)),
-          ),
+          TextButton(onPressed: () => Navigator.pop(context, false), child: Text('Batal')),
+          TextButton(onPressed: () => Navigator.pop(context, true), child: Text('Hapus', style: TextStyle(color: Colors.red))),
         ],
       ),
     );
 
     if (confirmed == true) {
       try {
-        await PocketBaseService().pb.collection('products').delete(productId);
         final productProvider = Provider.of<ProductProvider>(context, listen: false);
-        await productProvider.fetchProducts();
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Produk berhasil dihapus')),
-        );
+        await productProvider.deleteProduct(productId);
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Produk berhasil dihapus')));
       } catch (e) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Gagal menghapus produk: $e')),
-        );
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Gagal menghapus produk: $e')));
       }
     }
   }
 
   void _editProduct(Map<String, dynamic> product) {
     setState(() {
-      _editingProductId = product['id'];
-      _name = product['name'] ?? '';
-      _description = product['description'] ?? '';
-      _price = (product['price'] as num?)?.toDouble() ?? 0.0;
-      _stock = (product['stock'] as num?)?.toInt() ?? 0;
+      _editingProductId = product['id'] as String;
+      _nameController.text = product['name'] ?? '';
+      _descriptionController.text = product['description'] ?? '';
+      _priceController.text = (product['price'] as num?)?.toString() ?? '0';
+      _stockController.text = (product['stock'] as num?)?.toString() ?? '0';
       _categoryId = product['category'] ?? '';
       _isFeatured = product['is_featured'] ?? false;
+      _imageUrlController.text = product['images'] != null ? product['images'] as String : '';
     });
   }
 
   Widget _buildProductCard(Map<String, dynamic> product) {
+    print('Membangun kartu untuk produk: $product');
     return Card(
       elevation: 2,
       margin: EdgeInsets.only(bottom: 12),
@@ -166,8 +166,26 @@ class _AddProductPageState extends State<AddProductPage> {
           decoration: BoxDecoration(
             color: Color(0xFFFDF2F8),
             borderRadius: BorderRadius.circular(8),
+            image: product['images'] != null && product['images'].isNotEmpty
+                ? DecorationImage(
+                    image: Image.network(
+                      product['images'],
+                      fit: BoxFit.cover,
+                      loadingBuilder: (context, child, loadingProgress) {
+                        if (loadingProgress == null) return child;
+                        return Center(child: CircularProgressIndicator());
+                      },
+                      errorBuilder: (context, error, stackTrace) {
+                        print('Error memuat gambar: $error, URL: ${product['images']}');
+                        return Icon(Icons.error, color: Colors.red);
+                      },
+                    ).image,
+                  )
+                : null,
           ),
-          child: Icon(Icons.image, color: Colors.grey, size: 30), // Placeholder tanpa gambar
+          child: product['images'] == null || product['images'].isEmpty
+              ? Icon(Icons.image, color: Colors.grey, size: 30)
+              : null,
         ),
         title: Text(product['name'], style: TextStyle(fontWeight: FontWeight.bold)),
         subtitle: Column(
@@ -247,26 +265,25 @@ class _AddProductPageState extends State<AddProductPage> {
                 });
               },
             ),
-            SizedBox(height: 16),
+            SizedBox(height: 12),
             Form(
               key: _formKey,
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   TextFormField(
-                    initialValue: _name,
+                    controller: _nameController,
                     decoration: InputDecoration(
                       labelText: 'Nama Produk',
                       border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
                     ),
                     validator: (value) =>
                         value?.isEmpty == true ? 'Nama tidak boleh kosong' : null,
-                    onSaved: (value) => _name = value ?? '',
-                    onChanged: (value) => _name = value,
+                    onSaved: (value) => _nameController.text = value ?? '',
                   ),
                   SizedBox(height: 12),
                   TextFormField(
-                    initialValue: _description,
+                    controller: _descriptionController,
                     decoration: InputDecoration(
                       labelText: 'Deskripsi',
                       border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
@@ -274,15 +291,14 @@ class _AddProductPageState extends State<AddProductPage> {
                     maxLines: 2,
                     validator: (value) =>
                         value?.isEmpty == true ? 'Deskripsi tidak boleh kosong' : null,
-                    onSaved: (value) => _description = value ?? '',
-                    onChanged: (value) => _description = value,
+                    onSaved: (value) => _descriptionController.text = value ?? '',
                   ),
                   SizedBox(height: 12),
                   Row(
                     children: [
                       Expanded(
                         child: TextFormField(
-                          initialValue: _price.toString(),
+                          controller: _priceController,
                           decoration: InputDecoration(
                             labelText: 'Harga',
                             border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
@@ -291,14 +307,13 @@ class _AddProductPageState extends State<AddProductPage> {
                           keyboardType: TextInputType.number,
                           validator: (value) =>
                               value?.isEmpty == true ? 'Harga tidak boleh kosong' : null,
-                          onSaved: (value) => _price = double.tryParse(value ?? '0') ?? 0.0,
-                          onChanged: (value) => _price = double.tryParse(value) ?? 0.0,
+                          onSaved: (value) => _priceController.text = value ?? '',
                         ),
                       ),
                       SizedBox(width: 12),
                       Expanded(
                         child: TextFormField(
-                          initialValue: _stock.toString(),
+                          controller: _stockController,
                           decoration: InputDecoration(
                             labelText: 'Stok',
                             border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
@@ -306,8 +321,7 @@ class _AddProductPageState extends State<AddProductPage> {
                           keyboardType: TextInputType.number,
                           validator: (value) =>
                               value?.isEmpty == true ? 'Stok tidak boleh kosong' : null,
-                          onSaved: (value) => _stock = int.tryParse(value ?? '0') ?? 0,
-                          onChanged: (value) => _stock = int.tryParse(value) ?? 0,
+                          onSaved: (value) => _stockController.text = value ?? '',
                         ),
                       ),
                     ],
@@ -343,6 +357,17 @@ class _AddProductPageState extends State<AddProductPage> {
                       });
                     },
                     activeColor: Color(0xFFEC4899),
+                  ),
+                  SizedBox(height: 12),
+                  TextFormField(
+                    controller: _imageUrlController,
+                    decoration: InputDecoration(
+                      labelText: 'URL Gambar',
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                      hintText: 'Masukkan URL gambar',
+                    ),
+                    validator: (value) => value?.isEmpty == true ? 'URL gambar tidak boleh kosong' : null,
+                    onSaved: (value) => _imageUrlController.text = value ?? '',
                   ),
                   SizedBox(height: 16),
                   Row(

@@ -1,48 +1,56 @@
 import 'package:flutter/material.dart';
-import 'package:pocketbase/pocketbase.dart';
-import '../../pocketbase_services.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 class AdminProvider with ChangeNotifier {
   List<Map<String, dynamic>> _orders = [];
-  final PocketBase _pb = PocketBaseService().pb;
+  final SupabaseClient _supabase = Supabase.instance.client;
 
   List<Map<String, dynamic>> get orders => _orders;
-
+  void clearOrders() {
+  _orders = [];
+  notifyListeners();
+}
   Future<void> fetchOrders() async {
-    print('Fetching orders from ${_pb.baseUrl}');
     try {
-      // Pastikan autentikasi jika diperlukan
-      if (!PocketBaseService().isAuthenticated()) {
-        print('Not authenticated, attempting to authenticate with default credentials');
-        await PocketBaseService().authWithPassword('admin@example.com', 'password123'); // Ganti dengan kredensial yang benar
+      final user = _supabase.auth.currentUser;
+      if (user == null) {
+        throw Exception('Tidak ada sesi autentikasi, silakan login ulang');
       }
 
-      final records = await _pb.collection('orders').getFullList(sort: '-created');
-      print('Records fetched: ${records.length} records');
-      _orders = records.map((record) {
-        print('Processing record: ${record.data}');
+      // Ambil data dari tabel orders dengan join ke auth.users untuk detail user
+      final response = await _supabase
+          .from('orders')
+          .select('''
+            id,
+            "recipient_name",
+            address,
+            latitude,
+            longitude,
+            total,
+            status,
+            notes,
+            timestamp,
+            created,
+            updated
+          ''')
+          .order('created', ascending: false);
+
+      _orders = response.map((record) {
         return {
-          'id': record.id,
-          'customer': {
-            'name': record.data['user']?.toString() ?? 'Unknown',
-            'phone': record.data['phone'] ?? '',
-            'notes': record.data['notes'] ?? '',
-          },
-          'location': {
-            'latitude': record.data['latitude'] ?? -6.1745,
-            'longitude': record.data['longitude'] ?? 106.8227,
-          },
-          'address': record.data['adresss'] ?? 'N/A',
-          'total': (record.data['total'] as num?)?.toDouble() ?? 0.0,
-          'status': record.data['status'] ?? 'pending',
-          'created': DateTime.parse(record.data['created'] ?? DateTime.now().toIso8601String()),
-          'updated': DateTime.parse(record.data['updated'] ?? DateTime.now().toIso8601String()),
+          'id': record['id'] as String,
+          'recipient_name': record['recipient_name'] as String? ?? 'Unknown', // Menggunakan recipient_name
+          'address': record['adresss'] as String? ?? 'N/A', // Perbaiki typo
+          'latitude': (record['latitude'] as num?)?.toDouble() ?? 0.0,
+          'longitude': (record['longitude'] as num?)?.toDouble() ?? 0.0,
+          'total': (record['total'] as num?)?.toDouble() ?? 0.0,
+          'status': record['status'] as String? ?? 'pending',
+          'notes': record['notes'] as String? ?? '',
+          'timestamp': record['timpestamp'] != null ? DateTime.parse(record['timpestamp'].toString()) : null, // Perbaiki typo
+          'created': DateTime.parse(record['created'].toString()),
+          'updated': DateTime.parse(record['updated'].toString()),
         };
       }).toList();
-      print('Orders after mapping: $_orders');
-      if (_orders.isEmpty) {
-        print('Warning: No orders found after mapping');
-      }
+
       notifyListeners();
     } catch (e) {
       print('Error fetching orders: $e');
@@ -52,7 +60,16 @@ class AdminProvider with ChangeNotifier {
 
   Future<void> updateOrderStatus(String orderId, String newStatus) async {
     try {
-      await _pb.collection('orders').update(orderId, body: {'status': newStatus});
+      // Pastikan status sesuai dengan constraint
+      final validStatuses = ['pending', 'confirmed', 'preparing', 'delivering', 'completed', 'cancelled'];
+      if (!validStatuses.contains(newStatus.toLowerCase())) {
+        throw Exception('Status tidak valid: $newStatus');
+      }
+
+      await _supabase
+          .from('orders')
+          .update({'status': newStatus})
+          .eq('id', orderId);
       await fetchOrders();
     } catch (e) {
       print('Error updating status: $e');
